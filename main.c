@@ -35,13 +35,112 @@ void string_push(String *list, char item) {
 }
 
 typedef struct {
+    String key;
+    String value;
+    /* int has_value; */
+} Attr;
+
+typedef struct {
+    Attr *items;
+    int len;
+    int cap;
+} AttrList;
+AttrList attrlist_new(int cap) {
+    AttrList list;
+    list.len = 0;
+    list.cap = cap;
+    list.items = malloc(cap * sizeof(Attr));
+    if (!list.items) {
+        perror("malloc failed.\n");
+        exit(EXIT_FAILURE);
+    }
+    return list;
+}
+void attrlist_push(AttrList *list, Attr item) {
+    if (list->len >= list->cap) {
+        int cap = list->cap + 10;  // Genius algorithm
+        Attr *new_items = realloc(list->items, cap * sizeof(Attr));
+        if (!new_items) {
+            perror("realloc failed.\n");
+            exit(EXIT_FAILURE);
+        }
+        list->cap = cap;
+        list->items = new_items;
+    }
+    list->items[list->len] = item;
+    list->len++;
+}
+
+enum ParseStatus {
+    OK,
+    UNEXPECTED_TAG_START,
+    UNEXPECTED_TAG_END,
+    UNEXPECTED_EOF,
+    UNEXPECTED_WHITESPACE_IN_TAG,
+};
+
+typedef struct {
+    String name;
+    int is_closing;
+    AttrList attrs;
+} TagToken;
+
+enum ParseStatus parse_tag_attributes(AttrList *attrs, char *token) {
+    Attr attr;
+
+    attr.key.items = "missing";
+    attr.key.len = 4;
+    attr.value.items = "none";
+    attr.value.len = 4;
+
+    attrlist_push(attrs, attr);
+
+    return OK;
+}
+
+enum ParseStatus parse_tag_token(TagToken *tag, char *token) {
+    tag->name = string_new(10);
+
+    if (iswspace(token[0])) {
+        return UNEXPECTED_WHITESPACE_IN_TAG;
+    }
+
+    tag->is_closing = 0;
+    if (token[0] == '/') {
+        tag->is_closing = 1;
+        token++;
+
+        if (iswspace(token[0])) {
+            return UNEXPECTED_WHITESPACE_IN_TAG;
+        }
+    }
+
+    for (; token[0] != '\0'; token++) {
+        if (iswspace(*token)) {
+            break;
+        }
+        string_push(&tag->name, *token);
+    }
+
+    AttrList attrs = attrlist_new(0);
+    enum ParseStatus err = parse_tag_attributes(&attrs, token);
+    if (err) {
+        return err;
+    }
+
+    tag->attrs = attrs;
+
+    return OK;
+}
+
+typedef struct {
     enum TokenType {
         TEXT,
         TAG,
     } type;
     union {
         String text;
-        String tag;
+        TagToken tag;
     } data;
 } Token;
 
@@ -98,13 +197,6 @@ int str_trim_len(char *str) {
     return end - start;
 }
 
-enum ParseStatus {
-    OK,
-    UNEXPECTED_TAG_START,
-    UNEXPECTED_TAG_END,
-    UNEXPECTED_EOF,
-};
-
 enum ParseStatus parse_tokens(TokenList *tokens) {
     String current_token = string_new(10);
     int is_tag = 0;
@@ -130,9 +222,15 @@ enum ParseStatus parse_tokens(TokenList *tokens) {
             }
             is_tag = 0;
             if (current_token.len > 0) {
+                TagToken tag;
+                enum ParseStatus err =
+                    parse_tag_token(&tag, current_token.items);
+                if (err) {
+                    return err;
+                }
                 Token token = {
                     .type = TAG,
-                    .data = {.tag = current_token},
+                    .data = {.tag = tag},
                 };
                 tokenlist_push(tokens, token);
                 current_token = string_new(10);
@@ -167,18 +265,24 @@ int main(int argc, char **argv) {
     for (int i = 0; i < tokenlist.len; i++) {
         Token token = tokenlist.items[i];
 
-        String string;
         if (token.type == TEXT) {
-            string = token.data.text;
+            printf("%s\n", token.data.text.items);
         } else {
-            string = token.data.tag;
-            printf("(tag) ");
+            TagToken tag = token.data.tag;
+            if (tag.is_closing) {
+                printf("(/)\n");
+            } else {
+                printf("()\n");
+            }
+            String name = tag.name;
+            printf("<%s>\n", name.items);
+            for (int i = 0; i < tag.attrs.len; i++) {
+                Attr attr = tag.attrs.items[i];
+                printf("[%s]", attr.key.items);
+                printf("= [%s]\n", attr.value.items);
+            }
         }
 
-        for (int i = 0; i < string.len; i++) {
-            printf("%c", string.items[i]);
-        }
-
-        printf("\n---------------------\n");
+        printf("---------------------\n");
     }
 }
