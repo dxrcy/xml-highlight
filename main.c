@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <wctype.h>
 
 typedef struct {
     char *items;
@@ -33,10 +34,15 @@ void string_push(String *list, char item) {
     list->len++;
 }
 
-typedef union {
-    struct {
+typedef struct {
+    enum TokenType {
+        TEXT,
+        TAG,
+    } type;
+    union {
         String text;
-    } text;
+        String tag;
+    } data;
 } Token;
 
 typedef struct {
@@ -70,17 +76,65 @@ void tokenlist_push(TokenList *list, Token item) {
     list->len++;
 }
 
-TokenList parse_tokens() {
-    TokenList tokens = tokenlist_new(10);
+int str_trim_len(char *str) {
+    char *start = NULL;
+    char *end = NULL;
 
+    for (char *i = str; *i != '\0'; i++) {
+        if (start == NULL) {
+            if (!iswspace(*i)) {
+                start = i;
+            }
+        } else {
+            if (!iswspace(*i)) {
+                end = i;
+            }
+        }
+    }
+
+    if (start == NULL || end == NULL) {
+        return 0;
+    }
+    return end - start;
+}
+
+enum ParseStatus {
+    OK,
+    UNEXPECTED_TAG_START,
+    UNEXPECTED_TAG_END,
+    UNEXPECTED_EOF,
+};
+
+enum ParseStatus parse_tokens(TokenList *tokens) {
     String current_token = string_new(10);
+    int is_tag = 0;
 
     int ch;
     while ((ch = getchar()) != EOF) {
-        if (ch == '\n' || ch == ' ') {
+        if (ch == '<') {
+            if (is_tag) {
+                return UNEXPECTED_TAG_START;
+            }
+            is_tag = 1;
+            if (str_trim_len(current_token.items) > 0) {
+                Token token = {
+                    .type = TEXT,
+                    .data = {.text = current_token},
+                };
+                tokenlist_push(tokens, token);
+            }
+            current_token = string_new(10);
+        } else if (ch == '>') {
+            if (!is_tag) {
+                return UNEXPECTED_TAG_END;
+            }
+            is_tag = 0;
             if (current_token.len > 0) {
-                Token token = {.text = current_token};
-                tokenlist_push(&tokens, token);
+                Token token = {
+                    .type = TAG,
+                    .data = {.tag = current_token},
+                };
+                tokenlist_push(tokens, token);
                 current_token = string_new(10);
             }
         } else {
@@ -88,19 +142,38 @@ TokenList parse_tokens() {
         }
     }
 
-    if (current_token.len > 0) {
-        Token token = {.text = current_token};
-        tokenlist_push(&tokens, token);
+    if (str_trim_len(current_token.items) > 0) {
+        if (is_tag) {
+            return UNEXPECTED_EOF;
+        }
+        Token token = {
+            .type = TEXT,
+            .data = {.text = current_token},
+        };
+        tokenlist_push(tokens, token);
     }
 
-    return tokens;
+    return 0;
 }
 
 int main(int argc, char **argv) {
-    TokenList tokenlist = parse_tokens();
+    TokenList tokenlist = tokenlist_new(10);
+    enum ParseStatus err = parse_tokens(&tokenlist);
+    if (err) {
+        fprintf(stderr, "Parse error: %d\n", err);
+        exit(1);
+    }
 
     for (int i = 0; i < tokenlist.len; i++) {
-        String string = tokenlist.items[i].text.text;
+        Token token = tokenlist.items[i];
+
+        String string;
+        if (token.type == TEXT) {
+            string = token.data.text;
+        } else {
+            string = token.data.tag;
+            printf("(tag) ");
+        }
 
         for (int i = 0; i < string.len; i++) {
             printf("%c", string.items[i]);
