@@ -567,7 +567,6 @@ ParseStatus replace_text_entities(String *output, String text) {
 
         string_push(output, ch);
     }
-    printf("\n");
 
     return OK;
 }
@@ -581,7 +580,6 @@ ParseStatus parse_node_tree_part(NodeList *nodes, TokenList *tokens,
         tokens->cap--;
 
         if (token.type == TOKEN_TEXT) {
-            printf("%s\n", token.data.text);
             String text = string_new(10);
             ParseStatus err = replace_text_entities(&text, token.data.text);
             if (err) {
@@ -647,29 +645,55 @@ ParseStatus parse_node_tree(NodeList *nodes, TokenList tokens) {
     return parse_node_tree_part(nodes, &tokens, 0, NULL);
 }
 
-void print_node_tree(NodeList *nodes, unsigned int depth) {
+void print_node_tree(NodeList *nodes, unsigned int depth, int single_line) {
     for (int i = 0; i < nodes->len; i++) {
         Node node = nodes->items[i];
 
-        for (int j = 0; j < depth; j++) {
-            printf("    ");
+        if (!single_line) {
+            for (int j = 0; j < depth; j++) {
+                printf("    ");
+            }
         }
         if (node.type == NODE_TEXT) {
-            printf("\"%s\"\n", node.data.text.items);
+            printf("\x1b[0m%s\x1b[0m", node.data.text.items);
+            if (!single_line) {
+                printf("\n");
+            }
             continue;
         }
+
         Element element = node.data.element;
-        printf("%s", element.tag_name.items);
+
+        int single_line = 0;
+        if (element.children.len <= 1) {
+            single_line = 1;
+        }
+
+        printf("\x1b[2;37m<");
+        printf("\x1b[0;36m%s\x1b[0m", element.tag_name.items);
         for (int j = 0; j < element.attrs.len; j++) {
             Attr attr = element.attrs.items[j];
-            printf(" [%s]=[%s]", attr.key.items, attr.value.items);
+            printf(" \x1b[35m%s", attr.key.items);
+            printf("\x1b[2;37m=\"");
+            printf("\x1b[0;33m%s", attr.value.items);
+            printf("\x1b[2;37m\"\x1b[0m");
         }
-        printf(": {\n");
-        print_node_tree(&element.children, depth + 1);
-        for (int j = 0; j < depth; j++) {
-            printf("    ");
+        printf("\x1b[2;37m>\x1b[0m");
+        if (!single_line) {
+            printf("\n");
         }
-        printf("}\n");
+
+        print_node_tree(&element.children, depth + 1, single_line);
+
+        if (!single_line) {
+            for (int j = 0; j < depth; j++) {
+                printf("    ");
+            }
+        }
+
+        printf("\x1b[2;37m</");
+        printf("\x1b[0;36m%s\x1b[0m", element.tag_name.items);
+        printf("\x1b[2;37m>\x1b[0m\n");
     }
 }
 
@@ -683,29 +707,29 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    for (int i = 0; i < tokenlist.len; i++) {
-        Token token = tokenlist.items[i];
-
-        if (token.type == TOKEN_TEXT) {
-            printf("%s\n", token.data.text.items);
-        } else {
-            TagToken tag = token.data.tag;
-            if (tag.is_closing) {
-                printf("(/)\n");
-            } else {
-                printf("()\n");
-            }
-            String name = tag.name;
-            printf("<%s>\n", name.items);
-            for (int i = 0; i < tag.attrs.len; i++) {
-                Attr attr = tag.attrs.items[i];
-                printf("[%s]", attr.key.items);
-                printf("=[%s]\n", attr.value.items);
-            }
-        }
-
-        printf("---------------------\n");
-    }
+    /* for (int i = 0; i < tokenlist.len; i++) { */
+    /*     Token token = tokenlist.items[i]; */
+    /*  */
+    /*     if (token.type == TOKEN_TEXT) { */
+    /*         printf("%s\n", token.data.text.items); */
+    /*     } else { */
+    /*         TagToken tag = token.data.tag; */
+    /*         if (tag.is_closing) { */
+    /*             printf("(/)\n"); */
+    /*         } else { */
+    /*             printf("()\n"); */
+    /*         } */
+    /*         String name = tag.name; */
+    /*         printf("<%s>\n", name.items); */
+    /*         for (int i = 0; i < tag.attrs.len; i++) { */
+    /*             Attr attr = tag.attrs.items[i]; */
+    /*             printf("[%s]", attr.key.items); */
+    /*             printf("=[%s]\n", attr.value.items); */
+    /*         } */
+    /*     } */
+    /*  */
+    /*     printf("---------------------\n"); */
+    /* } */
 
     NodeList nodes = nodelist_new(10);
     err = parse_node_tree(&nodes, tokenlist);
@@ -714,5 +738,5 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    print_node_tree(&nodes, 0);
+    print_node_tree(&nodes, 0, 0);
 }
