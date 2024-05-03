@@ -95,6 +95,9 @@ typedef enum {
     MISMATCHED_TAGS,
     UNEXPECTED_EOF_FOR_CLOSING_TAG,
     UNEXPECTED_END_COMMENT,
+    ENTITY_TOO_LONG,
+    INVALID_ENTITY,
+    UNEXPECTED_TEXT_END_FOR_ENTITY,
 } ParseStatus;
 
 char *parsestatus_msg(ParseStatus status) {
@@ -130,6 +133,12 @@ char *parsestatus_msg(ParseStatus status) {
             return "Unexpected end of file. Expected matching closing tag.";
         case UNEXPECTED_END_COMMENT:
             return "Unexpected comment ending identifier.";
+        case ENTITY_TOO_LONG:
+            return "XML entity code is too long.";
+        case INVALID_ENTITY:
+            return "Invalid XML entity code.";
+        case UNEXPECTED_TEXT_END_FOR_ENTITY:
+            return "Unexpected end of text. Expected end of entity code.";
         default:
             return "Unknown error";
     }
@@ -348,7 +357,7 @@ int str_starts_with(char *str, char *pattern) {
     return 1;
 }
 
-#define BUFFER_SIZE 8
+#define READ_BUFSIZE 8
 
 ParseStatus parse_tokens(TokenList *tokens) {
     String current_token = string_new(10);
@@ -356,7 +365,7 @@ ParseStatus parse_tokens(TokenList *tokens) {
     int is_comment = 0;
     char quote = '\0';
 
-    char read_buf[BUFFER_SIZE];
+    char read_buf[READ_BUFSIZE];
     int skip_count = 0;
     int eof_index = -1;
 
@@ -365,13 +374,13 @@ ParseStatus parse_tokens(TokenList *tokens) {
             eof_index--;
         }
 
-        for (int i = 0; i < BUFFER_SIZE; i++) {
-            if (i < BUFFER_SIZE - skip_count - 1) {
+        for (int i = 0; i < READ_BUFSIZE; i++) {
+            if (i < READ_BUFSIZE - skip_count - 1) {
                 read_buf[i] = read_buf[i + skip_count + 1];
             } else if (eof_index < 0) {
                 char next_ch = getchar();
                 if (next_ch == EOF) {
-                    eof_index = BUFFER_SIZE - 1;
+                    eof_index = READ_BUFSIZE - 1;
                     next_ch = '\0';
                 }
                 read_buf[i] = next_ch;
@@ -515,6 +524,54 @@ void nodelist_push(NodeList *list, Node item) {
     list->len++;
 }
 
+#define ENTITY_BUFSIZE 6
+
+ParseStatus replace_text_entities(String *output, String text) {
+    for (int i = 0; i < text.len; i++) {
+        char ch = text.items[i];
+
+        if (ch == '&') {
+            char buf[ENTITY_BUFSIZE] = "";
+            int start = i;
+            while (i++) {
+                if (i - start >= ENTITY_BUFSIZE) {
+                    return ENTITY_TOO_LONG;
+                };
+                if (i >= text.len) {
+                    return UNEXPECTED_TEXT_END_FOR_ENTITY;
+                }
+                char ch2 = text.items[i];
+                if (ch2 == ';') {
+                    break;
+                }
+                buf[i - start - 1] = ch2;
+            }
+
+            char replace;
+            if (!strcmp(buf, "lt")) {
+                replace = '<';
+            } else if (!strcmp(buf, "gt")) {
+                replace = '>';
+            } else if (!strcmp(buf, "amp")) {
+                replace = '&';
+            } else if (!strcmp(buf, "quot")) {
+                replace = '"';
+            } else if (!strcmp(buf, "apos")) {
+                replace = '\'';
+            } else {
+                return INVALID_ENTITY;
+            }
+            string_push(output, replace);
+            continue;
+        }
+
+        string_push(output, ch);
+    }
+    printf("\n");
+
+    return OK;
+}
+
 ParseStatus parse_node_tree_part(NodeList *nodes, TokenList *tokens,
                                  unsigned int depth, char *current_tag_name) {
     while (tokens->len > 0) {
@@ -524,7 +581,14 @@ ParseStatus parse_node_tree_part(NodeList *nodes, TokenList *tokens,
         tokens->cap--;
 
         if (token.type == TOKEN_TEXT) {
-            Node node = {.type = NODE_TEXT, .data = {.text = token.data.text}};
+            printf("%s\n", token.data.text);
+            String text = string_new(10);
+            ParseStatus err = replace_text_entities(&text, token.data.text);
+            if (err) {
+                return err;
+            }
+
+            Node node = {.type = NODE_TEXT, .data = {.text = text}};
             nodelist_push(nodes, node);
             continue;
         }
