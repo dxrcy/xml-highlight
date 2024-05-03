@@ -1,2 +1,6 @@
+name := "main"
+
+watch := "find | entr -dc zsh -i -c"
+
 run:
-	runs main.c gcc %f -o %n -Wall '&&' cat example.xml '|' ./%n
+	{{watch}} 'gcc {{name}}.c -o {{name}} -Wall -Wpedantic && cat example.xml | ./{{name}}'

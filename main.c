@@ -1,13 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wctype.h>
 
 typedef struct {
     char *items;
-    int len;
-    int cap;
+    unsigned int len;
+    unsigned int cap;
 } String;
-String string_new(int cap) {
+String string_new(unsigned int cap) {
     String list;
     list.len = 0;
     list.cap = cap;
@@ -34,6 +35,14 @@ void string_push(String *list, char item) {
     list->len++;
 }
 
+String string_from(char *str) {
+    String list = string_new(10);
+    for (; str[0] != '\0'; str++) {
+        string_push(&list, str[0]);
+    }
+    return list;
+}
+
 typedef struct {
     String key;
     String value;
@@ -42,10 +51,10 @@ typedef struct {
 
 typedef struct {
     Attr *items;
-    int len;
-    int cap;
+    unsigned int len;
+    unsigned int cap;
 } AttrList;
-AttrList attrlist_new(int cap) {
+AttrList attrlist_new(unsigned int cap) {
     AttrList list;
     list.len = 0;
     list.cap = cap;
@@ -71,13 +80,60 @@ void attrlist_push(AttrList *list, Attr item) {
     list->len++;
 }
 
-enum ParseStatus {
+typedef enum {
     OK,
     UNEXPECTED_TAG_START,
     UNEXPECTED_TAG_END,
     UNEXPECTED_EOF,
     UNEXPECTED_WHITESPACE_IN_TAG,
-};
+    UNEXPECTED_ATTRIBUTE_DELIMITER,
+    UNEXPECTED_TAG_END_FOR_ATTRIBUTE,
+    UNEXPECTED_NON_QUOTE_FOR_ATTRIBUTE,
+    UNEXPECTED_XML_PROLOG,
+    UNEXPECTED_OPENING_TAG,
+    UNEXPECTED_CLOSING_TAG,
+    MISMATCHED_TAGS,
+    UNEXPECTED_EOF_FOR_CLOSING_TAG,
+    UNEXPECTED_END_COMMENT,
+} ParseStatus;
+
+char *parsestatus_msg(ParseStatus status) {
+    switch (status) {
+        case OK:
+            return "";
+        case UNEXPECTED_TAG_START:
+            return "Unexpected `<`";
+        case UNEXPECTED_TAG_END:
+            return "Unexpected `>`";
+        case UNEXPECTED_EOF:
+            return "Unexpected end of file. Expected `>`";
+        case UNEXPECTED_WHITESPACE_IN_TAG:
+            return "Unexpected whitespace before tag name";
+        case UNEXPECTED_ATTRIBUTE_DELIMITER:
+            return "Unexpected `=`. Expected start of attribute key";
+        case UNEXPECTED_TAG_END_FOR_ATTRIBUTE:
+            return "Unexpected end of tag. Expected `'` or `\"`";
+        case UNEXPECTED_NON_QUOTE_FOR_ATTRIBUTE:
+            return "Unexpected non-quote character in attribute value. "
+                   "Expected `'` or `\"`";
+        case UNEXPECTED_XML_PROLOG:
+            return "Unexpected XML prolog. Prolog must occur at beginning of "
+                   "file";
+        case UNEXPECTED_OPENING_TAG:
+            return "Unexpected opening tag. Expected end of file. Only one "
+                   "root node is allowed.";
+        case UNEXPECTED_CLOSING_TAG:
+            return "Unexpected closing tag. Expected end of file.";
+        case MISMATCHED_TAGS:
+            return "Mismatched tags. Opening tag does not match closing tag.";
+        case UNEXPECTED_EOF_FOR_CLOSING_TAG:
+            return "Unexpected end of file. Expected matching closing tag.";
+        case UNEXPECTED_END_COMMENT:
+            return "Unexpected comment ending identifier.";
+        default:
+            return "Unknown error";
+    }
+}
 
 typedef struct {
     String name;
@@ -85,20 +141,104 @@ typedef struct {
     AttrList attrs;
 } TagToken;
 
-enum ParseStatus parse_tag_attributes(AttrList *attrs, char *token) {
-    Attr attr;
+ParseStatus parse_tag_attributes(AttrList *attrs, char *token) {
+    String key_opt = string_new(10);
+    String value_opt = string_new(10);
+    int is_value_active = 0;
+    int was_whitespace = 0;
+    char quote_char = '\0';
 
-    attr.key.items = "missing";
-    attr.key.len = 4;
-    attr.value.items = "none";
-    attr.value.len = 4;
+    for (; token[0] != '\0'; token++) {
+        char ch = token[0];
+        if (key_opt.len == 0) {
+            if (iswspace(ch)) {
+                continue;
+            }
+            if (ch == '=') {
+                return UNEXPECTED_ATTRIBUTE_DELIMITER;
+            }
+            string_push(&key_opt, token[0]);
+        } else if (!is_value_active) {
+            if (iswspace(ch)) {
+                was_whitespace = 1;
+                continue;
+            }
+            if (was_whitespace && ch != '=') {
+                if (key_opt.len == 0) {
+                    fprintf(stderr, "this string shouldn't be empty.");
+                    exit(1);
+                }
+                Attr attr = {
+                    .key = key_opt,
+                    .value = value_opt,
+                };
+                attrlist_push(attrs, attr);
+            }
 
-    attrlist_push(attrs, attr);
+            if (ch != '=') {
+                string_push(&key_opt, token[0]);
+                continue;
+            }
+
+            token++;
+            for (; iswspace(token[0]); token++)
+                ;
+
+            char quote = token[0];
+            if (quote == '\0') {
+                return UNEXPECTED_TAG_END_FOR_ATTRIBUTE;
+            }
+            if (quote != '"' && quote != '\'') {
+                return UNEXPECTED_NON_QUOTE_FOR_ATTRIBUTE;
+            }
+
+            is_value_active = 1;
+            quote_char = quote;
+        } else {
+            if (ch != quote_char) {
+                string_push(&value_opt, ch);
+                continue;
+            }
+            if (key_opt.len == 0) {
+                fprintf(stderr, "this string shouldn't be empty.");
+                exit(1);
+            }
+            Attr attr = {
+                .key = key_opt,
+                .value = value_opt,
+            };
+            attrlist_push(attrs, attr);
+            key_opt = string_new(10);
+            value_opt = string_new(10);
+            is_value_active = 0;
+        }
+    }
+
+    if (key_opt.len > 0) {
+        if (key_opt.items[0] == '?') {
+            if (key_opt.items[1] != '\0') {
+                fprintf(stderr,
+                        "this error should have been handled better :(");
+                exit(1);
+            }
+        } else {
+            String a = string_new(5);
+            a.items = "EMPTY";
+            Attr attr = {
+                .key = key_opt,
+                .value = a,
+            };
+            attrlist_push(attrs, attr);
+        }
+    }
+    if (value_opt.len > 0) {
+        return UNEXPECTED_NON_QUOTE_FOR_ATTRIBUTE;
+    }
 
     return OK;
 }
 
-enum ParseStatus parse_tag_token(TagToken *tag, char *token) {
+ParseStatus parse_tag_token(TagToken *tag, char *token) {
     tag->name = string_new(10);
 
     if (iswspace(token[0])) {
@@ -116,14 +256,15 @@ enum ParseStatus parse_tag_token(TagToken *tag, char *token) {
     }
 
     for (; token[0] != '\0'; token++) {
-        if (iswspace(*token)) {
+        char ch = token[0];
+        if (iswspace(ch)) {
             break;
         }
-        string_push(&tag->name, *token);
+        string_push(&tag->name, ch);
     }
 
     AttrList attrs = attrlist_new(0);
-    enum ParseStatus err = parse_tag_attributes(&attrs, token);
+    ParseStatus err = parse_tag_attributes(&attrs, token);
     if (err) {
         return err;
     }
@@ -135,8 +276,8 @@ enum ParseStatus parse_tag_token(TagToken *tag, char *token) {
 
 typedef struct {
     enum TokenType {
-        TEXT,
-        TAG,
+        TOKEN_TEXT,
+        TOKEN_TAG,
     } type;
     union {
         String text;
@@ -146,10 +287,10 @@ typedef struct {
 
 typedef struct {
     Token *items;
-    int len;
-    int cap;
+    unsigned int len;
+    unsigned int cap;
 } TokenList;
-TokenList tokenlist_new(int cap) {
+TokenList tokenlist_new(unsigned int cap) {
     TokenList list;
     list.len = 0;
     list.cap = cap;
@@ -197,12 +338,65 @@ int str_trim_len(char *str) {
     return end - start;
 }
 
-enum ParseStatus parse_tokens(TokenList *tokens) {
+int str_starts_with(char *str, char *pattern) {
+    char ch;
+    for (int i = 0; (ch = pattern[i]) != '\0'; i++) {
+        if (ch != str[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+#define BUFFER_SIZE 8
+
+ParseStatus parse_tokens(TokenList *tokens) {
     String current_token = string_new(10);
     int is_tag = 0;
+    int is_comment = 0;
 
-    int ch;
-    while ((ch = getchar()) != EOF) {
+    char read_buf[BUFFER_SIZE];
+    int skip_count = 0;
+    int eof_index = -1;
+
+    while (eof_index != 0) {
+        if (eof_index > 0) {
+            eof_index--;
+        }
+
+        for (int i = 0; i < BUFFER_SIZE; i++) {
+            if (i < BUFFER_SIZE - skip_count - 1) {
+                read_buf[i] = read_buf[i + skip_count + 1];
+            } else if (eof_index < 0) {
+                char next_ch = getchar();
+                if (next_ch == EOF) {
+                    eof_index = BUFFER_SIZE - 1;
+                    next_ch = '\0';
+                }
+                read_buf[i] = next_ch;
+            }
+        }
+
+        skip_count = 0;
+        char ch = read_buf[0];
+
+        if (str_starts_with(read_buf, "-->")) {
+            if (!is_comment) {
+                return UNEXPECTED_END_COMMENT;
+            }
+            is_comment = 0;
+            skip_count = 2;
+            continue;
+        }
+        if (is_comment) {
+            continue;
+        }
+        if (str_starts_with(read_buf, "<!--")) {
+            is_comment = 1;
+            skip_count = 3;
+            continue;
+        }
+
         if (ch == '<') {
             if (is_tag) {
                 return UNEXPECTED_TAG_START;
@@ -210,7 +404,7 @@ enum ParseStatus parse_tokens(TokenList *tokens) {
             is_tag = 1;
             if (str_trim_len(current_token.items) > 0) {
                 Token token = {
-                    .type = TEXT,
+                    .type = TOKEN_TEXT,
                     .data = {.text = current_token},
                 };
                 tokenlist_push(tokens, token);
@@ -223,13 +417,12 @@ enum ParseStatus parse_tokens(TokenList *tokens) {
             is_tag = 0;
             if (current_token.len > 0) {
                 TagToken tag;
-                enum ParseStatus err =
-                    parse_tag_token(&tag, current_token.items);
+                ParseStatus err = parse_tag_token(&tag, current_token.items);
                 if (err) {
                     return err;
                 }
                 Token token = {
-                    .type = TAG,
+                    .type = TOKEN_TAG,
                     .data = {.tag = tag},
                 };
                 tokenlist_push(tokens, token);
@@ -245,7 +438,7 @@ enum ParseStatus parse_tokens(TokenList *tokens) {
             return UNEXPECTED_EOF;
         }
         Token token = {
-            .type = TEXT,
+            .type = TOKEN_TEXT,
             .data = {.text = current_token},
         };
         tokenlist_push(tokens, token);
@@ -254,18 +447,158 @@ enum ParseStatus parse_tokens(TokenList *tokens) {
     return 0;
 }
 
+typedef struct {
+    struct Node *items;
+    unsigned int len;
+    unsigned int cap;
+} NodeList;
+
+typedef struct Element {
+    String tag_name;
+    AttrList attrs;
+    NodeList children;
+} Element;
+
+typedef struct Node {
+    enum {
+        NODE_TEXT,
+        NODE_ELEMENT,
+    } type;
+    union {
+        String text;
+        struct Element element;
+    } data;
+} Node;
+
+NodeList nodelist_new(unsigned int cap) {
+    NodeList list;
+    list.len = 0;
+    list.cap = cap;
+    list.items = malloc(cap * sizeof(Node));
+    if (!list.items) {
+        perror("malloc failed.\n");
+        exit(EXIT_FAILURE);
+    }
+    return list;
+}
+void nodelist_push(NodeList *list, Node item) {
+    if (list->len >= list->cap) {
+        int cap = list->cap + 10;  // Genius algorithm
+        Node *new_items = realloc(list->items, cap * sizeof(Node));
+        if (!new_items) {
+            perror("realloc failed.\n");
+            exit(EXIT_FAILURE);
+        }
+        list->cap = cap;
+        list->items = new_items;
+    }
+    list->items[list->len] = item;
+    list->len++;
+}
+
+ParseStatus parse_node_tree_part(NodeList *nodes, TokenList *tokens,
+                                 unsigned int depth, char *current_tag_name) {
+    while (tokens->len > 0) {
+        Token token = tokens->items[0];
+        tokens->items++;
+        tokens->len--;
+        tokens->cap--;
+
+        if (token.type == TOKEN_TEXT) {
+            Node node = {.type = NODE_TEXT, .data = {.text = token.data.text}};
+            nodelist_push(nodes, node);
+            continue;
+        }
+
+        TagToken tag = token.data.tag;
+
+        if (!strcmp(tag.name.items, "?xml")) {
+            return UNEXPECTED_XML_PROLOG;
+        }
+
+        if (tag.is_closing) {
+            if (depth == 0) {
+                return UNEXPECTED_CLOSING_TAG;
+            }
+            if (current_tag_name != NULL &&
+                strcmp(current_tag_name, tag.name.items)) {
+                return MISMATCHED_TAGS;
+            }
+            return OK;
+        }
+
+        if (depth == 0 && nodes->len > 0) {
+            return UNEXPECTED_OPENING_TAG;
+        }
+
+        NodeList children = nodelist_new(10);
+        ParseStatus err =
+            parse_node_tree_part(&children, tokens, depth + 1, tag.name.items);
+        if (err) {
+            return err;
+        }
+
+        Node node = {.type = NODE_ELEMENT,
+                     .data = {.element = {
+                                  .tag_name = tag.name,
+                                  .attrs = tag.attrs,
+                                  .children = children,
+                              }}};
+        nodelist_push(nodes, node);
+    }
+
+    return OK;
+}
+
+ParseStatus parse_node_tree(NodeList *nodes, TokenList tokens) {
+    if (tokens.len > 0) {
+        Token token = tokens.items[0];
+        if (token.type == TOKEN_TAG &&
+            !strcmp(token.data.tag.name.items, "?xml")) {
+            tokens.items++;
+            tokens.len--;
+            tokens.cap--;
+        }
+    }
+
+    return parse_node_tree_part(nodes, &tokens, 0, NULL);
+}
+
+void print_node_tree(NodeList *nodes, unsigned int depth) {
+    for (int i = 0; i < nodes->len; i++) {
+        Node node = nodes->items[i];
+
+        for (int j = 0; j < depth; j++) {
+            printf("    ");
+        }
+        if (node.type == NODE_TEXT) {
+            printf("\"%s\"\n", node.data.text.items);
+            continue;
+        }
+        Element element = node.data.element;
+        printf("%s: {\n", element.tag_name.items);
+        print_node_tree(&element.children, depth + 1);
+        for (int j = 0; j < depth; j++) {
+            printf("    ");
+        }
+        printf("}\n");
+    }
+}
+
 int main(int argc, char **argv) {
+    ParseStatus err;
+
     TokenList tokenlist = tokenlist_new(10);
-    enum ParseStatus err = parse_tokens(&tokenlist);
+    err = parse_tokens(&tokenlist);
     if (err) {
-        fprintf(stderr, "Parse error: %d\n", err);
+        fprintf(stderr, "Parse error (1): %d\n%s\n", err, parsestatus_msg(err));
         exit(1);
     }
 
     for (int i = 0; i < tokenlist.len; i++) {
         Token token = tokenlist.items[i];
 
-        if (token.type == TEXT) {
+        if (token.type == TOKEN_TEXT) {
             printf("%s\n", token.data.text.items);
         } else {
             TagToken tag = token.data.tag;
@@ -279,10 +612,19 @@ int main(int argc, char **argv) {
             for (int i = 0; i < tag.attrs.len; i++) {
                 Attr attr = tag.attrs.items[i];
                 printf("[%s]", attr.key.items);
-                printf("= [%s]\n", attr.value.items);
+                printf("=[%s]\n", attr.value.items);
             }
         }
 
         printf("---------------------\n");
     }
+
+    NodeList nodes = nodelist_new(10);
+    err = parse_node_tree(&nodes, tokenlist);
+    if (err) {
+        fprintf(stderr, "Parse error (2): %d\n%s\n", err, parsestatus_msg(err));
+        exit(1);
+    }
+
+    print_node_tree(&nodes, 0);
 }
