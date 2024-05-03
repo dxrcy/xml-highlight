@@ -354,6 +354,7 @@ ParseStatus parse_tokens(TokenList *tokens) {
     String current_token = string_new(10);
     int is_tag = 0;
     int is_comment = 0;
+    char quote = '\0';
 
     char read_buf[BUFFER_SIZE];
     int skip_count = 0;
@@ -380,57 +381,75 @@ ParseStatus parse_tokens(TokenList *tokens) {
         skip_count = 0;
         char ch = read_buf[0];
 
-        if (str_starts_with(read_buf, "-->")) {
-            if (!is_comment) {
-                return UNEXPECTED_END_COMMENT;
+        if (is_tag && (ch == '"' || ch == '\'')) {
+            if (ch == quote) {
+                quote = '\0';
+            } else {
+                quote = ch;
             }
-            is_comment = 0;
-            skip_count = 2;
-            continue;
-        }
-        if (is_comment) {
-            continue;
-        }
-        if (str_starts_with(read_buf, "<!--")) {
-            is_comment = 1;
-            skip_count = 3;
+            string_push(&current_token, ch);
             continue;
         }
 
-        if (ch == '<') {
-            if (is_tag) {
-                return UNEXPECTED_TAG_START;
-            }
-            is_tag = 1;
-            if (str_trim_len(current_token.items) > 0) {
-                Token token = {
-                    .type = TOKEN_TEXT,
-                    .data = {.text = current_token},
-                };
-                tokenlist_push(tokens, token);
-            }
-            current_token = string_new(10);
-        } else if (ch == '>') {
-            if (!is_tag) {
-                return UNEXPECTED_TAG_END;
-            }
-            is_tag = 0;
-            if (current_token.len > 0) {
-                TagToken tag;
-                ParseStatus err = parse_tag_token(&tag, current_token.items);
-                if (err) {
-                    return err;
+        if (quote == '\0') {
+            if (str_starts_with(read_buf, "-->")) {
+                if (!is_comment) {
+                    return UNEXPECTED_END_COMMENT;
+                    string_push(&current_token, ch);
+                    continue;
                 }
-                Token token = {
-                    .type = TOKEN_TAG,
-                    .data = {.tag = tag},
-                };
-                tokenlist_push(tokens, token);
-                current_token = string_new(10);
+                is_comment = 0;
+                skip_count = 2;
+                continue;
             }
-        } else {
-            string_push(&current_token, ch);
+            if (is_comment) {
+                continue;
+            }
+            if (str_starts_with(read_buf, "<!--")) {
+                is_comment = 1;
+                skip_count = 3;
+                continue;
+            }
+
+            if (ch == '<') {
+                if (is_tag) {
+                    return UNEXPECTED_TAG_START;
+                }
+                is_tag = 1;
+                if (str_trim_len(current_token.items) > 0) {
+                    Token token = {
+                        .type = TOKEN_TEXT,
+                        .data = {.text = current_token},
+                    };
+                    tokenlist_push(tokens, token);
+                }
+                current_token = string_new(10);
+                continue;
+            }
+            if (ch == '>') {
+                if (!is_tag) {
+                    return UNEXPECTED_TAG_END;
+                }
+                is_tag = 0;
+                if (current_token.len > 0) {
+                    TagToken tag;
+                    ParseStatus err =
+                        parse_tag_token(&tag, current_token.items);
+                    if (err) {
+                        return err;
+                    }
+                    Token token = {
+                        .type = TOKEN_TAG,
+                        .data = {.tag = tag},
+                    };
+                    tokenlist_push(tokens, token);
+                    current_token = string_new(10);
+                }
+                continue;
+            }
         }
+
+        string_push(&current_token, ch);
     }
 
     if (str_trim_len(current_token.items) > 0) {
@@ -576,7 +595,12 @@ void print_node_tree(NodeList *nodes, unsigned int depth) {
             continue;
         }
         Element element = node.data.element;
-        printf("%s: {\n", element.tag_name.items);
+        printf("%s", element.tag_name.items);
+        for (int j = 0; j < element.attrs.len; j++) {
+            Attr attr = element.attrs.items[j];
+            printf(" [%s]=[%s]", attr.key.items, attr.value.items);
+        }
+        printf(": {\n");
         print_node_tree(&element.children, depth + 1);
         for (int j = 0; j < depth; j++) {
             printf("    ");
