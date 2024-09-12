@@ -707,30 +707,6 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    /* for (int i = 0; i < tokenlist.len; i++) { */
-    /*     Token token = tokenlist.items[i]; */
-    /*  */
-    /*     if (token.type == TOKEN_TEXT) { */
-    /*         printf("%s\n", token.data.text.items); */
-    /*     } else { */
-    /*         TagToken tag = token.data.tag; */
-    /*         if (tag.is_closing) { */
-    /*             printf("(/)\n"); */
-    /*         } else { */
-    /*             printf("()\n"); */
-    /*         } */
-    /*         String name = tag.name; */
-    /*         printf("<%s>\n", name.items); */
-    /*         for (int i = 0; i < tag.attrs.len; i++) { */
-    /*             Attr attr = tag.attrs.items[i]; */
-    /*             printf("[%s]", attr.key.items); */
-    /*             printf("=[%s]\n", attr.value.items); */
-    /*         } */
-    /*     } */
-    /*  */
-    /*     printf("---------------------\n"); */
-    /* } */
-
     NodeList nodes = nodelist_new(10);
     err = parse_node_tree(&nodes, tokenlist);
     if (err) {
