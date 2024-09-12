@@ -1,7 +1,7 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <wctype.h>
 
 typedef struct {
     char *items;
@@ -160,7 +160,7 @@ ParseStatus parse_tag_attributes(AttrList *attrs, char *token) {
     for (; token[0] != '\0'; token++) {
         char ch = token[0];
         if (key_opt.len == 0) {
-            if (iswspace(ch)) {
+            if (isspace(ch)) {
                 continue;
             }
             if (ch == '=') {
@@ -168,7 +168,7 @@ ParseStatus parse_tag_attributes(AttrList *attrs, char *token) {
             }
             string_push(&key_opt, token[0]);
         } else if (!is_value_active) {
-            if (iswspace(ch)) {
+            if (isspace(ch)) {
                 was_whitespace = 1;
                 continue;
             }
@@ -190,7 +190,7 @@ ParseStatus parse_tag_attributes(AttrList *attrs, char *token) {
             }
 
             token++;
-            for (; iswspace(token[0]); token++);
+            for (; isspace(token[0]); token++);
 
             char quote = token[0];
             if (quote == '\0') {
@@ -249,7 +249,7 @@ ParseStatus parse_tag_attributes(AttrList *attrs, char *token) {
 ParseStatus parse_tag_token(TagToken *tag, char *token) {
     tag->name = string_new(10);
 
-    if (iswspace(token[0])) {
+    if (isspace(token[0])) {
         return UNEXPECTED_WHITESPACE_IN_TAG;
     }
 
@@ -258,14 +258,14 @@ ParseStatus parse_tag_token(TagToken *tag, char *token) {
         tag->is_closing = 1;
         token++;
 
-        if (iswspace(token[0])) {
+        if (isspace(token[0])) {
             return UNEXPECTED_WHITESPACE_IN_TAG;
         }
     }
 
     for (; token[0] != '\0'; token++) {
         char ch = token[0];
-        if (iswspace(ch)) {
+        if (isspace(ch)) {
             break;
         }
         string_push(&tag->name, ch);
@@ -330,11 +330,11 @@ int str_trim_len(char *str) {
 
     for (char *i = str; *i != '\0'; i++) {
         if (start == NULL) {
-            if (!iswspace(*i)) {
+            if (!isspace(*i)) {
                 start = i;
             }
         } else {
-            if (!iswspace(*i)) {
+            if (!isspace(*i)) {
                 end = i;
             }
         }
