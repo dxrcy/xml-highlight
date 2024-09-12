@@ -190,8 +190,7 @@ ParseStatus parse_tag_attributes(AttrList *attrs, char *token) {
             }
 
             token++;
-            for (; iswspace(token[0]); token++)
-                ;
+            for (; iswspace(token[0]); token++);
 
             char quote = token[0];
             if (quote == '\0') {
@@ -349,7 +348,7 @@ int str_trim_len(char *str) {
 
 int str_starts_with(char *str, char *pattern) {
     char ch;
-    for (int i = 0; (ch = pattern[i]) != '\0'; i++) {
+    for (size_t i = 0; (ch = pattern[i]) != '\0'; i++) {
         if (ch != str[i]) {
             return 0;
         }
@@ -527,7 +526,7 @@ void nodelist_push(NodeList *list, Node item) {
 #define ENTITY_BUFSIZE 6
 
 ParseStatus replace_text_entities(String *output, String text) {
-    for (int i = 0; i < text.len; i++) {
+    for (size_t i = 0; i < text.len; i++) {
         char ch = text.items[i];
 
         if (ch == '&') {
@@ -646,11 +645,11 @@ ParseStatus parse_node_tree(NodeList *nodes, TokenList tokens) {
 }
 
 void print_node_tree(NodeList *nodes, unsigned int depth, int single_line) {
-    for (int i = 0; i < nodes->len; i++) {
+    for (size_t i = 0; i < nodes->len; i++) {
         Node node = nodes->items[i];
 
         if (!single_line) {
-            for (int j = 0; j < depth; j++) {
+            for (size_t j = 0; j < depth; j++) {
                 printf("    ");
             }
         }
@@ -671,7 +670,7 @@ void print_node_tree(NodeList *nodes, unsigned int depth, int single_line) {
 
         printf("\x1b[2;37m<");
         printf("\x1b[0;36m%s\x1b[0m", element.tag_name.items);
-        for (int j = 0; j < element.attrs.len; j++) {
+        for (size_t j = 0; j < element.attrs.len; j++) {
             Attr attr = element.attrs.items[j];
             printf(" \x1b[35m%s", attr.key.items);
             printf("\x1b[2;37m=\"");
@@ -686,7 +685,7 @@ void print_node_tree(NodeList *nodes, unsigned int depth, int single_line) {
         print_node_tree(&element.children, depth + 1, single_line);
 
         if (!single_line) {
-            for (int j = 0; j < depth; j++) {
+            for (size_t j = 0; j < depth; j++) {
                 printf("    ");
             }
         }
@@ -697,7 +696,7 @@ void print_node_tree(NodeList *nodes, unsigned int depth, int single_line) {
     }
 }
 
-int main(int argc, char **argv) {
+int main() {
     ParseStatus err;
 
     TokenList tokenlist = tokenlist_new(10);
