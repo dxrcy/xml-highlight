@@ -1,9 +1,13 @@
-# XML Parser/Highlighter
+# XML Highlighter
 
-Tokenizes XML input to highlights syntax.
+Tokenizes XML input to highlight syntax.
 
 ```sh
+# Compile and run
+make run
+
+# Install
 make
-cat example.xml | ./xmlparse
+sudo make install
 ```
 
